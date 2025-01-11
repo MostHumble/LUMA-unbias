@@ -10,6 +10,7 @@ from transformers.dynamic_module_utils import get_imports
 import time
 from tqdm import tqdm
 import pandas 
+import pickle
 
 torch.set_float32_matmul_precision("high")
 
@@ -79,21 +80,28 @@ def run_model_batch(image_paths: List[Path], model: AutoModelForCausalLM, proces
         num_beams=num_beams,
     )
 
-    results = processor.batch_decode(generated_ids, skip_special_tokens=False)
-    return [result.replace('</s>', '').replace('<s>', '').replace('<pad>', '') for result in results]
+    results = processor.batch_decode(generated_ids, skip_special_tokens=True)
+    return 
 
 
 def process_images_recursive(images: pandas.core.frame.DataFrame, model: AutoModelForCausalLM, processor: AutoProcessor, batch_size: int = 8) -> Tuple[int, float]:
     start_time = time.time()
     total_images = 0
-
+    all_captions = []
     # Convert paths to a list
     num_batches = len(images) // batch_size + (1 if len(images) % batch_size > 0 else 0)
 
     for i in tqdm(range(num_batches), desc="Processing batches"):
         batch = torch.tensor(images[i*batch_size:(i+1)*batch_size]['image'])
         # Use DETAIL_MODE variable here
-        captions = run_model_batch(batch, model, processor, task='caption', detail_mode=DETAIL_MODE)
+        try:
+            captions = run_model_batch(batch, model, processor, task='caption', detail_mode=DETAIL_MODE)
+            all_captions.extend(captions)
+        except Exception as e:
+            print(f"Error processing batch {i}: {e}")
+            ## save what we have so far
+            with open("/home/sklioui/captions.pkl", "wb") as f:
+                pickle.dump(all_captions, f)
         for path, caption in zip(batch, captions):
             caption = f"{PREPEND_STRING}{caption}{APPEND_STRING}"
             if PRINT_CAPTIONS:
