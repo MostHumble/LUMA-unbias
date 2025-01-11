@@ -53,38 +53,31 @@ def load_image_paths_recursive(folder_path: str) -> Iterator[Path]:
         if path.suffix.lower() in valid_extensions and (OVERWRITE or not path.with_suffix('.txt').exists())
     )
 
-def run_model_batch(image_paths: List[Path], model: AutoModelForCausalLM, processor: AutoProcessor,
-                    task: str = 'caption', num_beams: int = 3, max_new_tokens: int = 1024, detail_mode: int = DETAIL_MODE) -> List[str]:
+def run_model_batch(images: torch.Tensor, model: AutoModelForCausalLM, processor: AutoProcessor,
+                     num_beams: int = 3, max_new_tokens: int = 512) -> List[str]:
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    prompt = {1: '<CAPTION>', 2: '<DETAILED_CAPTION>', 3: '<MORE_DETAILED_CAPTION>'}.get(detail_mode, '<MORE_DETAILED_CAPTION>')
+    prompt = '<MORE_DETAILED_CAPTION>'
 
-    inputs = {
-        "input_ids": [],
-        "pixel_values": []
-    }
-
-    for image_path in image_paths:
-        with Image.open(image_path).convert("RGB") as img:
-            input_data = processor(text=prompt, images=img, return_tensors="pt", do_rescale=False)
-            inputs["input_ids"].append(input_data["input_ids"])
-            inputs["pixel_values"].append(input_data["pixel_values"])
+    inputs = processor(text=[prompt]*images.size(0), images=images, return_tensors="pt", do_rescale=False).to(device)
 
     # Keep input_ids as Long type and only convert pixel_values to bfloat16
-    inputs["input_ids"] = torch.cat(inputs["input_ids"]).to(device)
-    inputs["pixel_values"] = torch.cat(inputs["pixel_values"]).to(device).to(torch.bfloat16)
+    inputs["input_ids"] = inputs["input_ids"]
+    inputs["pixel_values"] = inputs["pixel_values"].to(torch.bfloat16)
 
     generated_ids = model.generate(
-        **inputs,
+        input_ids=inputs["input_ids"],
+        pixel_values=inputs["pixel_values"],
         max_new_tokens=max_new_tokens,
         do_sample=False,
         num_beams=num_beams,
     )
 
     results = processor.batch_decode(generated_ids, skip_special_tokens=True)
-    return 
+    return results
 
 
 def process_images_recursive(images: pandas.core.frame.DataFrame, model: AutoModelForCausalLM, processor: AutoProcessor, batch_size: int = 8) -> Tuple[int, float]:
+    
     start_time = time.time()
     total_images = 0
     all_captions = []
@@ -92,22 +85,22 @@ def process_images_recursive(images: pandas.core.frame.DataFrame, model: AutoMod
     num_batches = len(images) // batch_size + (1 if len(images) % batch_size > 0 else 0)
 
     for i in tqdm(range(num_batches), desc="Processing batches"):
-        batch = torch.tensor(images[i*batch_size:(i+1)*batch_size]['image'])
+        img_batch = torch.tensor(images[i*batch_size:(i+1)*batch_size]['image'])
         # Use DETAIL_MODE variable here
         try:
-            captions = run_model_batch(batch, model, processor, task='caption', detail_mode=DETAIL_MODE)
+            captions = run_model_batch(img_batch, model, processor)
             all_captions.extend(captions)
         except Exception as e:
             print(f"Error processing batch {i}: {e}")
             ## save what we have so far
-            with open("/home/sklioui/captions.pkl", "wb") as f:
+            with open(f"/home/sklioui/captions_{i}.pkl", "wb") as f:
                 pickle.dump(all_captions, f)
-        for path, caption in zip(batch, captions):
-            caption = f"{PREPEND_STRING}{caption}{APPEND_STRING}"
-            if PRINT_CAPTIONS:
-                print(f"Caption for {path}: {caption}")
-            path.with_suffix('.txt').write_text(caption)
-            total_images += 1
+                
+        total_images += len(img_batch)
+    
+    # Save the captions to a pickle file
+    with open("/home/sklioui/captions.pkl", "wb") as f:
+        pickle.dump(all_captions, f)
 
     total_time = time.time() - start_time
     return total_images, total_time
