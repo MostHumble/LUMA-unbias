@@ -1,9 +1,12 @@
 import torch
-from diffusers import FluxPipeline
+from diffusers import AutoPipelineForText2Image
 import pickle
 from tqdm import tqdm
 import os
 import logging
+import torch
+
+
 
 def argparser():
     """Parses command-line arguments for image generation."""
@@ -20,12 +23,6 @@ def argparser():
         type=str, 
         required=True, 
         help="Directory where the generated images will be saved."
-    )
-    parser.add_argument(
-        '--model_name', 
-        type=str, 
-        default='black-forest-labs/FLUX.1-schnell', 
-        help="Name of the pretrained model to use for generating images."
     )
     return parser
 
@@ -68,22 +65,21 @@ def main():
     logging.info(f"Using device: {device}")
 
     logging.info("Loading model pipeline...")
-    pipe = FluxPipeline.from_pretrained(args.model_name, torch_dtype=torch.bfloat16)
-    pipe = pipe.to(device)
 
-    # Use torch.compile if CUDA is available
-    if device == "cuda":
-        pipe = torch.compile(pipe)
+    pipe = AutoPipelineForText2Image.from_pretrained(
+    "stabilityai/stable-diffusion-xl-base-1.0", torch_dtype=torch.float16, variant="fp16"
+    ).to("cuda")
+    generator = torch.Generator("cuda").manual_seed(31)
+    pipe.unet = torch.compile(pipe.unet, mode="reduce-overhead")
 
     logging.info("Starting image generation...")
+
     for i, caption in tqdm(enumerate(captions), total=len(captions), desc="Generating Images"):
         try:
             image = pipe(
-                caption,
-                guidance_scale=0.0,
-                num_inference_steps=4,
-                max_sequence_length=256,
-                generator=torch.Generator("cpu").manual_seed(0)
+                prompt = caption,
+                guidance_scale=3.5,
+                generator=generator
             ).images[0]
 
             save_path = os.path.join(args.save_path, f"{i}.png")
