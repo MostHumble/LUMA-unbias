@@ -109,7 +109,7 @@ def process_images_recursive(images: pandas.DataFrame,
 
 def argparser():
     import argparse
-    parser = argparse.ArgumentParser(description='Process some integers.')
+    parser = argparse.ArgumentParser(description='Arguments for captioning images')
     parser.add_argument('--images_pickle_path', type=str, help='Path to the pickle file containing the images')
     parser.add_argument('--batch_size', type=int, default=8, help='Batch size for captioning images')
     parser.add_argument('--model_name', type=str, default='microsoft/Florence-2-large', help='Model name to use for captioning')
