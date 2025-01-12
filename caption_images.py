@@ -46,13 +46,6 @@ def download_and_load_model(model_name: str) -> Tuple[AutoModelForCausalLM, Auto
     model = torch.compile(model, mode="reduce-overhead")
     return model, processor
 
-def load_image_paths_recursive(folder_path: str) -> Iterator[Path]:
-    valid_extensions = {".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp"}
-    return (
-        path for path in Path(folder_path).rglob("*")
-        if path.suffix.lower() in valid_extensions and (OVERWRITE or not path.with_suffix('.txt').exists())
-    )
-
 def run_model_batch(images: torch.Tensor, model: AutoModelForCausalLM, processor: AutoProcessor,
                      num_beams: int = 3, max_new_tokens: int = 512) -> List[str]:
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -73,65 +66,81 @@ def run_model_batch(images: torch.Tensor, model: AutoModelForCausalLM, processor
     )
 
     results = processor.batch_decode(generated_ids, skip_special_tokens=True)
+
     return results
 
 
-def process_images_recursive(images: pandas.core.frame.DataFrame, model: AutoModelForCausalLM, processor: AutoProcessor, batch_size: int = 8) -> Tuple[int, float]:
-    
+def process_images_recursive(images: pandas.DataFrame,
+                            model: AutoModelForCausalLM,
+                            processor: AutoProcessor, 
+                            batch_size: int = 8,
+                            save_name='test') -> Tuple[int, float]:
+    import numpy as np
+
     start_time = time.time()
     total_images = 0
     all_captions = []
-    # Convert paths to a list
     num_batches = len(images) // batch_size + (1 if len(images) % batch_size > 0 else 0)
 
     for i in tqdm(range(num_batches), desc="Processing batches"):
-        img_batch = torch.tensor(images[i*batch_size:(i+1)*batch_size]['image'])
-        # Use DETAIL_MODE variable here
+        # Extract and prepare the batch of images
+        try:
+            img_batch_np = np.stack(images.iloc[i * batch_size:(i + 1) * batch_size]['image'].values)  # Stack into a single array
+            img_batch = torch.tensor(img_batch_np, dtype=torch.float32)  # Convert to PyTorch tensor
+        except Exception as e:
+            print(f"Error preparing batch {i}: {e}")
+            continue  # Skip the batch and move to the next
         try:
             captions = run_model_batch(img_batch, model, processor)
             all_captions.extend(captions)
         except Exception as e:
             print(f"Error processing batch {i}: {e}")
-            ## save what we have so far
-            with open(f"/home/sklioui/captions_{i}.pkl", "wb") as f:
+            with open(f"/home/sklioui/captions/captions_partial_{save_name}.pkl", "wb") as f:
                 pickle.dump(all_captions, f)
-                
+
         total_images += len(img_batch)
     
-    # Save the captions to a pickle file
-    with open("/home/sklioui/captions.pkl", "wb") as f:
+    # Save all captions to a pickle file
+    with open(f"/home/sklioui/captions/captions_{save_name}.pkl", "wb") as f:
         pickle.dump(all_captions, f)
 
     total_time = time.time() - start_time
     return total_images, total_time
 
-# Main execution
-model_name = 'microsoft/Florence-2-large'
-model, processor = download_and_load_model(model_name)
+def argparser():
+    import argparse
+    parser = argparse.ArgumentParser(description='Process some integers.')
+    parser.add_argument('--images_pickle_path', type=str, help='Path to the pickle file containing the images')
+    parser.add_argument('--batch_size', type=int, default=8, help='Batch size for captioning images')
+    parser.add_argument('--model_name', type=str, default='microsoft/Florence-2-large', help='Model name to use for captioning')
 
-# Process images in the /input/ folder
-folder_path = Path(__file__).parent / "input"
-total_images, total_time = process_images_recursive(load_image_paths_recursive(folder_path), model, processor, batch_size=BATCH_SIZE)
+    return parser
 
-print(f"Total images captioned: {total_images}")
-print(f"Total time taken: {total_time:.2f} seconds")
+if __name__ == "__main__":
+    parser = argparser()
+    args = parser.parse_args()
 
-# Fix for divide-by-zero when calculating average time per image
-if total_images > 0:
-    print(f"Average time per image: {total_time / total_images:.2f} seconds")
-else:
-    print("No images were processed, so no average time to display.")
+    # Main execution
+    model, processor = download_and_load_model(args.model_name)
 
-# Count the number of files in the directory
-file_count = len(list(folder_path.iterdir()))
-print(f"Total files in folder: {file_count}")
-
-########################################################################################
-
-# Load the DataFrame back from the pickle file
-with open("/home/sklioui/images.pkl", "rb") as f:
-    images = pickle.load(f).reset_index()
+    # Load the images from the pickle file
+    with open(args.images_pickle_path, "rb") as f:
+        images = pickle.load(f)
     
-task_prompt = '<MORE_DETAILED_CAPTION>'
-out = run_example(image, task_prompt)
-print(out)
+    print(f"Loaded {len(images)} images from {args.images_pickle_path}")
+    print(images)
+
+    total_images, total_time = process_images_recursive(images,
+                                                        model,
+                                                        processor,
+                                                        batch_size=args.batch_size,
+                                                        save_name=args.images_pickle_path.split('/')[-1].split('.')[0])
+
+    print(f"Total images captioned: {total_images}")
+    print(f"Total time taken: {total_time:.2f} seconds")
+
+    # Fix for divide-by-zero when calculating average time per image
+    if total_images > 0:
+        print(f"Average time per image: {total_time / total_images:.2f} seconds")
+    else:
+        print("No images were processed, so no average time to display.")
