@@ -4,11 +4,11 @@ An attempt to aliviate the bias present in [LUMA](https://arxiv.org/abs/2406.098
 # Current approach
 The idea is for the generated captions to behave as some kind of latent space (as of that of autoencoders), this latent space must have as much information as possible so that we can reproduce the original image, by avoiding the use of non-factual signals. I state that because of this it could also help in avoiding the inclusion of biases.
 
-1- Generate the captions using a VLM (eg. Paligamma, 
-2- Use the captions to generate an image, using some kind of diffusion model (eg. Stable diffusion)
-3- Use vision encoder model to generate embeddings of both the reference image and the generated image
-4- Compare the generated embeddings using some similarity metric
-5- Pick only the most similar items
+1. Generate the captions using a VLM (eg. Paligamma).
+2. Use the captions to generate an image, using some kind of diffusion model (eg. Stable diffusion).
+3. Use a vision encoder (eg. a ViT) to generate embeddings of both the reference image and the generated image.
+4. Compare the generated embeddings using some similarity metric.
+5. Pick only the most similar items.
 
 # Reference
 ```
