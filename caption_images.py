@@ -1,8 +1,6 @@
 import torch
 from pathlib import Path
-from functools import partial
-from typing import Iterator, List, Tuple
-from PIL import Image
+from typing import List, Tuple
 from unittest.mock import patch
 from transformers import AutoModelForCausalLM, AutoProcessor
 from huggingface_hub import snapshot_download
@@ -116,7 +114,7 @@ def argparser():
 
     return parser
 
-if __name__ == "__main__":
+def main():
     parser = argparser()
     args = parser.parse_args()
 
@@ -144,3 +142,6 @@ if __name__ == "__main__":
         print(f"Average time per image: {total_time / total_images:.2f} seconds")
     else:
         print("No images were processed, so no average time to display.")
+
+if __name__ == "__main__":
+    main()
