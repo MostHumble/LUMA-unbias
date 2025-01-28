@@ -11,10 +11,10 @@ import warnings
 warnings.filterwarnings('ignore')
 
 class TextImageSimilarityCalculator:
-    def __init__(self, batch_size=32):
+    def __init__(self, batch_size=32, model_name="google/siglip-so400m-patch14-384"):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model = AutoModel.from_pretrained("google/siglip-so400m-patch14-384").to(self.device)
-        self.processor = AutoProcessor.from_pretrained("google/siglip-so400m-patch14-384")
+        self.model = AutoModel.from_pretrained(model_name).to(self.device)
+        self.processor = AutoProcessor.from_pretrained(model_name)
         self.batch_size = batch_size
         self.model.eval()
     
@@ -74,6 +74,12 @@ def argparser():
         default='text_image_similarities.csv',
         help='Path to save the similarity scores'
     )
+    parser.add_argument(
+        '--model_name',
+        type=str,
+        default='google/siglip-so400m-patch14-384',
+        help='Name of the model to use'
+    )
     return parser
 
 def main():
@@ -87,7 +93,7 @@ def main():
     
     print(f"Loaded {len(images_df)} images and {len(captions)} captions")
     
-    calculator = TextImageSimilarityCalculator(batch_size=args.batch_size)
+    calculator = TextImageSimilarityCalculator(batch_size=args.batch_size, model_name=args.model_name)
     
     print("Calculating similarities...")
     similarities = calculator.calculate_similarity(images_df, captions)
