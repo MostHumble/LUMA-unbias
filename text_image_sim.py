@@ -22,7 +22,7 @@ class TextImageSimilarityCalculator:
         image = Image.fromarray(image_array.astype('uint8'))
         return self.processor(images=image, return_tensors="pt").to(self.device)
     
-    @torch.no_grad()
+    @torch.inference_mode()
     def calculate_similarity(self, images_df, captions):
         similarities = []
         
