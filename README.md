@@ -14,13 +14,20 @@ The idea is for the generated captions to behave as some kind of latent space (a
 
 The major issue of this approach is that there are confounding factors, low similarity could indicate any of:
 
-- Poor VLM descriptions
-- Poor image generation
-- Poor choice of a similarity metric
-  
+1. Poor VLM descriptions
+2. Poor image generation
+3. Poor choice of a similarity metric
+
+## On the usage of Cosine sim, from ViT generated embeddings
+
+The results show that the similarity scores between generated images and their ground truth is lower! than that of ground truth with images from other classes
+
+![vit_cosim_in_out_sim](https://github.com/user-attachments/assets/75cc6a6e-92d2-404c-9a06-f6988cfc3d48)
+
+This is more likely a result of the poor choice of a similarity metric, as it's unlikely that images from other classes would be more similar the generated ones
+
 ## Next steps
 
-- Compute similarity between semantically different but class-similar images (e.g., two different dogs). High scores indicate metric isn't sensitive enough
 - Exploring other similarity metrics like:
   - LPIPS (Learned Perceptual Image Patch Similarity)
   - SSIM for structural similarity
