@@ -39,7 +39,7 @@ class ImageSimilarityCalculator:
             image = image.convert('RGB')
         return self.transform(image).unsqueeze(0).to(self.device)
     
-    @torch.no_grad()
+    @torch.inference_mode()
     def get_embedding(self, image_tensor):
         embedding = self.model(image_tensor)
         # Normalize the embedding for cosine similarity
