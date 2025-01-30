@@ -9,22 +9,32 @@ import warnings
 from tqdm import tqdm
 import argparse
 import numpy as np
+from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity as lpips
+from torchvision import transforms
 
 
 warnings.filterwarnings('ignore')
 
 class ImageSimilarityCalculator:
-    def __init__(self, batch_size):
+    def __init__(self, batch_size, metric='cosine', net_type='alex', normalize=True):
         # Load pretrained EfficientNetB0 and remove the final classification layer
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        weights = ViT_B_16_Weights.DEFAULT
-        
-        self.model = vit_b_16(weights=weights)
-        self.model.heads = nn.Identity()  # Remove classification head
-        self.model = self.model.to(self.device)
-        self.model.eval()
-        
-        self.transform = weights.transforms()
+        self.metric = metric
+        if metric == 'cosine':
+            weights = ViT_B_16_Weights.DEFAULT
+            self.model = vit_b_16(weights=weights)
+            self.model.heads = nn.Identity()  # Remove classification head
+            self.model = self.model.to(self.device)
+            self.model.eval()
+            self.transform = weights.transforms()
+        if metric == 'lpips':
+            self.normalize = normalize
+            self.net_type = net_type
+            self.model = lpips(net_type=net_type, normalize=normalize).to(self.device)
+            if normalize:
+                self.transform = transforms.Lambda(lambda x: x / 255.0)
+            else:
+                self.transform = transforms.Lambda(lambda x: 2 * x / 255.0 - 1)
         self.batch_size = batch_size
     
     def _is_path(self, image):
@@ -55,20 +65,27 @@ class ImageSimilarityCalculator:
         source_tensors = torch.cat([
         self.preprocess_image(img) for img in source_images
         ])
-        source_embeddings = self.get_embedding(source_tensors)
         
         # Process target images
         target_tensors = torch.cat([
             self.preprocess_image(img) for img in target_images
         ])
-        target_embeddings = self.get_embedding(target_tensors)
+
+        if self.metric == 'cosine':
+            source_embeddings = self.get_embedding(source_tensors)
+            target_embeddings = self.get_embedding(target_tensors)
+            
+            # Compute similarities using torch's cosine similarity
+            similarities = torch.nn.functional.cosine_similarity(
+                source_embeddings, target_embeddings
+            )
+            
+            return similarities.cpu().numpy()
         
-        # Compute similarities using torch's cosine similarity
-        similarities = torch.nn.functional.cosine_similarity(
-            source_embeddings, target_embeddings
-        )
-        
-        return similarities.cpu().numpy()
+        if self.metric == 'lpips':
+            with torch.no_grad():
+                similarities = self.model(source_tensors, target_tensors)
+            return similarities.cpu().numpy()
     
     def compute_similarities(self, cifar_df, cifar_images_dir):
         similarities = {}
@@ -198,6 +215,8 @@ def argparser():
             type=str, 
             help="Directory where the similarities will be saved."
         )    
+    parser.add_argument('--metric', type=str, default='cosine', help='Similarity metric to use (cosine or lpips)')
+    parser.add_argument('--net_type', type=str, default='alex', help='Network type for lpips metric')
     
     return parser    
     
@@ -208,7 +227,7 @@ def main():
     ref_images = pd.read_pickle(args.ref_images_pickle_path)
     
     # Initialize calculator
-    calculator = ImageSimilarityCalculator(batch_size=args.batch_size)
+    calculator = ImageSimilarityCalculator(batch_size=args.batch_size, metric=args.metric, net_type=args.net_type)
 
     if not args.gen_images_dir:
         # Compute class similarities
