@@ -217,8 +217,14 @@ def argparser():
         )    
     parser.add_argument('--metric', type=str, default='cosine', help='Similarity metric to use (cosine or lpips)')
     parser.add_argument('--net_type', type=str, default='alex', help='Network type for lpips metric')
+    parser.add_argument('--normalize', type=bool, default=True, help='Normalize the images for lpips metric')
     
     return parser    
+
+def get_suffix(args):
+    if args.metric != 'cosine':
+        return f"_{args.metric}_{args.net_type}"
+    return ""
     
 def main():
     parser = argparser()
@@ -227,7 +233,7 @@ def main():
     ref_images = pd.read_pickle(args.ref_images_pickle_path)
     
     # Initialize calculator
-    calculator = ImageSimilarityCalculator(batch_size=args.batch_size, metric=args.metric, net_type=args.net_type)
+    calculator = ImageSimilarityCalculator(batch_size=args.batch_size, metric=args.metric, net_type=args.net_type, normalize=args.normalize)
 
     if not args.gen_images_dir:
         # Compute class similarities
@@ -238,8 +244,8 @@ def main():
         out_class_df = pd.DataFrame({k: v['out_class'] for k, v in results.items()}).T
         
         # Save results
-        in_class_df.to_csv('in_class_similarities.csv')
-        out_class_df.to_csv('out_class_similarities.csv')
+        in_class_df.to_csv(f'in_class_similarities{get_suffix(args)}.csv')
+        out_class_df.to_csv(f'out_class_similarities{get_suffix(args)}.csv')
         
         print("\nIn-class similarity statistics:")
         print(in_class_df.describe())
