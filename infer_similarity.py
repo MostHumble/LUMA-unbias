@@ -32,9 +32,15 @@ class ImageSimilarityCalculator:
             self.net_type = net_type
             self.model = lpips(net_type=net_type, normalize=normalize).to(self.device)
             if normalize:
-                self.transform = transforms.Lambda(lambda x: x / 255.0)
+                self.transform = transforms.Compose([
+                    transforms.ToTensor(),
+                    transforms.Lambda(lambda x: x / 255.0)
+                ])
             else:
-                self.transform = transforms.Lambda(lambda x: 2 * x / 255.0 - 1)
+                self.transform = transforms.Compose([
+                    transforms.ToTensor(),
+                    transforms.Lambda(lambda x: 2 * x / 255.0 - 1)
+                ])
         self.batch_size = batch_size
     
     def _is_path(self, image):
