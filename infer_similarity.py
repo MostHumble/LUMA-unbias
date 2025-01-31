@@ -9,7 +9,7 @@ import warnings
 from tqdm import tqdm
 import argparse
 import numpy as np
-from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity as lpips
+from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 from torchvision import transforms
 
 
@@ -30,7 +30,7 @@ class ImageSimilarityCalculator:
         if metric == 'lpips':
             self.normalize = normalize
             self.net_type = net_type
-            self.model = lpips(net_type=net_type, normalize=normalize).to(self.device)
+            self.model = LearnedPerceptualImagePatchSimilarity(net_type=net_type, normalize=normalize).to(self.device)
             if normalize:
                 self.transform = transforms.Compose([
                     transforms.ToTensor(),
@@ -68,16 +68,16 @@ class ImageSimilarityCalculator:
     
     def process_batch(self, source_images, target_images):
         # Process source images
-        source_tensors = torch.cat([
-        self.preprocess_image(img) for img in source_images
-        ])
-        
-        # Process target images
-        target_tensors = torch.cat([
-            self.preprocess_image(img) for img in target_images
-        ])
 
         if self.metric == 'cosine':
+            source_tensors = torch.cat([
+            self.preprocess_image(img) for img in source_images
+            ])
+            
+            # Process target images
+            target_tensors = torch.cat([
+                self.preprocess_image(img) for img in target_images
+            ])
             source_embeddings = self.get_embedding(source_tensors)
             target_embeddings = self.get_embedding(target_tensors)
             
@@ -89,8 +89,12 @@ class ImageSimilarityCalculator:
             return similarities.cpu().numpy()
         
         if self.metric == 'lpips':
-            with torch.no_grad():
-                similarities = self.model(source_tensors, target_tensors)
+            similarities = []
+            for image_source, image_target in zip(source_images, target_images):
+                similarity = self.model(self.preprocess_image(image_source), self.preprocess_image(image_target))
+                similarities.append(similarity)
+
+            similarities = torch.stack(similarities)
             return similarities.cpu().numpy()
     
     def compute_similarities(self, cifar_df, cifar_images_dir):
@@ -244,7 +248,7 @@ def main():
     if not args.gen_images_dir:
         # Compute class similarities
         results = calculator.compute_class_similarities(ref_images, args.max_samples)
-        
+
         # Convert to DataFrame
         in_class_df = pd.DataFrame({k: v['in_class'] for k, v in results.items()}).T
         out_class_df = pd.DataFrame({k: v['out_class'] for k, v in results.items()}).T
