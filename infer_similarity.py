@@ -33,11 +33,13 @@ class ImageSimilarityCalculator:
             self.model = LearnedPerceptualImagePatchSimilarity(net_type=net_type, normalize=normalize).to(self.device)
             if normalize:
                 self.transform = transforms.Compose([
+                    transforms.Resize((224, 224)),
                     transforms.ToTensor(),
                     transforms.Lambda(lambda x: x / 255.0)
                 ])
             else:
                 self.transform = transforms.Compose([
+                    transforms.Resize((224, 224)),
                     transforms.ToTensor(),
                     transforms.Lambda(lambda x: 2 * x / 255.0 - 1)
                 ])
@@ -232,9 +234,10 @@ def argparser():
     return parser    
 
 def get_suffix(args):
-    if args.metric != 'cosine':
+    if args.metric == 'lpips':
         return f"_{args.metric}_{args.net_type}"
-    return ""
+    elif args.metric == 'cosine':
+        return f"_{args.metric}"
     
 def main():
     parser = argparser()
