@@ -89,7 +89,7 @@ def argparser():
     parser.add_argument(
         '--save_path',
         type=str,
-        default='text_image_similarities.csv',
+        default='/home/sklioui/text_image_similarities.csv',
         help='Path to save the similarity scores'
     )
     parser.add_argument(
@@ -132,7 +132,10 @@ def main():
         'score': scores,
         'caption': captions
     })
-    results_df.to_csv(args.save_path, index=False)
+    # add model name to save path
+    save_path = args.save_path.split(".")
+    save_path = save_path[0] + "_" + args.model_id.split("/")[1] + "." + save_path[1]
+    results_df.to_csv(save_path, index=False)
     
     print(f"\nResults saved to {args.save_path}")
     print("\nSimilarity Statistics:")
