@@ -1,55 +1,73 @@
 import torch
 from PIL import Image
-from transformers import AutoProcessor, AutoModel
+from transformers import CLIPProcessor, CLIPModel, CLIPConfig
 import pandas as pd
 import pickle
 from pathlib import Path
 from tqdm import tqdm
 import argparse
 import warnings
+import numpy as np
 
-warnings.filterwarnings('ignore')
+warnings.simplefilter("ignore")
 
-class TextImageSimilarityCalculator:
-    def __init__(self, batch_size=32, model_name="google/siglip-so400m-patch14-384"):
+class TextImageScoresCalculator:
+    def __init__(self, batch_size=32, model_id="zer0int/LongCLIP-L-Diffusers", maxtokens=248):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model = AutoModel.from_pretrained(model_name).to(self.device)
-        self.processor = AutoProcessor.from_pretrained(model_name)
+        self.dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
+        
+        # Configure and load the model
+        config = CLIPConfig.from_pretrained(model_id)
+        config.text_config.max_position_embeddings = maxtokens
+        
+        self.model = CLIPModel.from_pretrained(
+            model_id, 
+            torch_dtype=self.dtype,
+            config=config
+        ).to(self.device)
+        
+        self.processor = CLIPProcessor.from_pretrained(
+            model_id,
+            padding="max_length",
+            max_length=maxtokens,
+            return_tensors="pt",
+            truncation=True
+        )
+        
         self.batch_size = batch_size
         self.model.eval()
     
     def preprocess_cifar_image(self, image_array):
-        image = Image.fromarray(image_array.astype('uint8'))
-        return self.processor(images=image, return_tensors="pt").to(self.device)
+        image_tensor = torch.from_numpy(image_array)
+        final_image = image_tensor.unsqueeze(0).permute(0, 3, 1, 2)
+        return final_image
     
     @torch.inference_mode()
-    def calculate_similarity(self, images_df, captions):
-        similarities = []
+    def calculate_scores(self, images_df, captions):
+        scores = []
         
         for idx in tqdm(range(len(images_df)), desc="Calculating similarities"):
             image = images_df.iloc[idx].image
             caption = captions[idx]
             
             # Process image and text
-            image_inputs = self.preprocess_cifar_image(image)
-            text_inputs = self.processor(text=[caption], return_tensors="pt").to(self.device)
+            final_image = self.preprocess_cifar_image(image)
+            inputs = self.processor(
+                text=caption,
+                images=final_image,
+                return_tensors="pt",
+                padding=True
+            ).to(self.device)
             
-            # Get embeddings
-            outputs = self.model(**{
-                "pixel_values": image_inputs.pixel_values,
-                "input_ids": text_inputs.input_ids,
-                "attention_mask": text_inputs.attention_mask
-            })
-            
-            # Calculate similarity score
+            # Get similarity scores
+            outputs = self.model(**inputs)
             logits = outputs.logits_per_image
-            prob = torch.sigmoid(logits)
-            similarities.append(float(prob[0][0]))
+            scores.append(float(logits[0]))
             
-        return similarities
+        return scores
 
 def argparser():
-    parser = argparse.ArgumentParser(description='Calculate text-image similarity using SigLIP model')
+    parser = argparse.ArgumentParser(description='Calculate text-image similarity using a CLIP model')
     parser.add_argument(
         '--images_pickle_path',
         type=str,
@@ -75,10 +93,16 @@ def argparser():
         help='Path to save the similarity scores'
     )
     parser.add_argument(
-        '--model_name',
+        '--model_id',
         type=str,
-        default='google/siglip-so400m-patch14-384',
+        default='zer0int/LongCLIP-L-Diffusers',
         help='Name of the model to use'
+    )
+    parser.add_argument(
+        '--maxtokens',
+        type=int,
+        default=248,
+        help='Maximum number of tokens for the model'
     )
     return parser
 
@@ -93,24 +117,28 @@ def main():
     
     print(f"Loaded {len(images_df)} images and {len(captions)} captions")
     
-    calculator = TextImageSimilarityCalculator(batch_size=args.batch_size, model_name=args.model_name)
+    calculator = TextImageScoresCalculator(
+        batch_size=args.batch_size,
+        model_id=args.model_id,
+        maxtokens=args.maxtokens
+    )
     
-    print("Calculating similarities...")
-    similarities = calculator.calculate_similarity(images_df, captions)
+    print("Calculating scores...")
+    scores = calculator.calculate_scores(images_df, captions)
     
     # Save results
     results_df = pd.DataFrame({
-        'index': range(len(similarities)),
-        'similarity': similarities,
+        'index': range(len(scores)),
+        'score': scores,
         'caption': captions
     })
     results_df.to_csv(args.save_path, index=False)
     
     print(f"\nResults saved to {args.save_path}")
     print("\nSimilarity Statistics:")
-    print(f"Average similarity: {sum(similarities)/len(similarities):.4f}")
-    print(f"Min similarity: {min(similarities):.4f}")
-    print(f"Max similarity: {max(similarities):.4f}")
+    print(f"Average score: {sum(scores)/len(scores):.4f}")
+    print(f"Min score: {min(scores):.4f}")
+    print(f"Max score: {max(scores):.4f}")
 
 if __name__ == "__main__":
     main()
