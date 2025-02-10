@@ -26,19 +26,28 @@ class ImageSimilarityCalculator:
             self.model.heads = nn.Identity()  # Remove classification head
             self.model = self.model.to(self.device)
             self.model.eval()
-            self.transform = weights.transforms()
+            # Get the ViT transforms and combine with CIFAR resize
+            vit_transforms = weights.transforms()
+            self.transform = transforms.Compose([
+                transforms.Resize((32, 32)),  # First resize to CIFAR dimensions
+                transforms.Resize(vit_transforms.crop_size),  # Resize to ViT expected size
+                transforms.ToTensor(),
+                transforms.Normalize(mean=vit_transforms.mean, std=vit_transforms.std)
+            ])
         if metric == 'lpips':
             self.normalize = normalize
             self.net_type = net_type
             self.model = LearnedPerceptualImagePatchSimilarity(net_type=net_type, normalize=normalize).to(self.device)
             if normalize:
                 self.transform = transforms.Compose([
+                    transforms.Resize((32, 32)),
                     transforms.Resize((224, 224)),
                     transforms.ToTensor(),
                     transforms.Lambda(lambda x: x / 255.0)
                 ])
             else:
                 self.transform = transforms.Compose([
+                    transforms.Resize((32, 32)),
                     transforms.Resize((224, 224)),
                     transforms.ToTensor(),
                     transforms.Lambda(lambda x: 2 * x / 255.0 - 1)
